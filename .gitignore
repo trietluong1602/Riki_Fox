@@ -1,0 +1,7 @@
+.DS_Store
+wiki/__pycache__/__init__.cpython-311.pyc
+wiki/__pycache__/core.cpython-311.pyc
+wiki/web/__pycache__/__init__.cpython-311.pyc
+wiki/web/__pycache__/forms.cpython-311.pyc
+wiki/web/__pycache__/routes.cpython-311.pyc
+wiki/web/__pycache__/user.cpython-311.pyc
