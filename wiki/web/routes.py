@@ -12,6 +12,7 @@ from flask_login import current_user
 from flask_login import login_required
 from flask_login import login_user
 from flask_login import logout_user
+from flask import jsonify
 
 from wiki.core import Processor
 from wiki.web.forms import EditorForm
@@ -21,6 +22,9 @@ from wiki.web.forms import URLForm
 from wiki.web import current_wiki
 from wiki.web import current_users
 from wiki.web.user import protect
+
+from datetime import datetime, timedelta
+import sqlite3
 
 
 bp = Blueprint('wiki', __name__)
@@ -180,3 +184,81 @@ def user_delete(user_id):
 def page_not_found(error):
     return render_template('404.html'), 404
 
+
+
+"""
+    Analytics
+    ~~~~~~~~~
+"""
+
+@bp.route('/track_page_view', methods=['POST'])
+def track_page_view():
+    database = sqlite3.connect('database.db')
+    cursor = database.cursor()
+
+    cursor.execute('''CREATE TABLE IF NOT EXISTS page_views
+                (id INTEGER PRIMARY KEY, page TEXT, views INTEGER)''')
+    cursor.execute('''CREATE TABLE IF NOT EXISTS timestamps
+                (id INTEGER PRIMARY KEY, page_view_id INTEGER,
+                timestamp TEXT, FOREIGN KEY(page_view_id) REFERENCES page_views(id))''')
+
+
+    data = request.json
+    page = data.get('page')    
+
+    cursor.execute('SELECT * FROM page_views WHERE page=?', (page,))
+    result = cursor.fetchone()
+
+    if result:
+        views = result[2] + 1
+        cursor.execute('UPDATE page_views SET views=? WHERE page=?', (views, page))
+        page_view_id = result[0]
+    else:
+        cursor.execute('INSERT INTO page_views (page, views) VALUES (?, 1)', (page,))
+        page_view_id = cursor.lastrowid
+    
+    timestamp = datetime.now().strftime('%Y-%m-%d')
+    cursor.execute('INSERT INTO timestamps (page_view_id, timestamp) VALUES (?, ?)', (page_view_id, timestamp))
+    
+
+    database.commit()
+
+    return 'Page view tracked successfully'
+
+
+@bp.route('/get_view_count', methods=['POST'])
+def get_view_count():
+    database = sqlite3.connect('database.db')
+    cursor = database.cursor()
+
+    data = request.json
+    page = data.get('page')
+    
+    cursor.execute('SELECT views FROM page_views WHERE page=?', (page,))
+    result = cursor.fetchone()
+    
+    if result:
+        view_count = result[0]
+        return jsonify({'view_count': view_count})
+    else:
+        return jsonify({'error': 'Page not found'}), 404
+
+    
+@bp.route('/get_timestamps', methods=['POST'])
+def get_timestamps():
+    database = sqlite3.connect('database.db')
+    cursor = database.cursor()
+
+    data = request.json
+    page = data.get('page')
+
+    cursor.execute('SELECT timestamp, COUNT(*) FROM timestamps JOIN page_views ON timestamps.page_view_id = page_views.id WHERE page_views.page = ? GROUP BY strftime("%Y-%m-%d", timestamp)', (page,))
+
+    data = []
+    for row in cursor.fetchall():
+        data.append({
+            'day': row[0],
+            'count': row[1]
+        })
+
+    return jsonify(data)
